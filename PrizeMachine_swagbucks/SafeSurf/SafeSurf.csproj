@@ -96,6 +96,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="System" />
+    <Reference Include="System.Configuration" />
     <Reference Include="System.Data" />
     <Reference Include="System.Deployment" />
     <Reference Include="System.Drawing" />
@@ -297,7 +298,7 @@
     </PublishFile>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\PrizeMachine_RefreshUtilities\RefreshUtilities\RefreshUtilities.csproj">
+    <ProjectReference Include="..\..\..\cs_PrizeMachine_RefreshUtilities\PrizeMachine_RefreshUtilities\RefreshUtilities\RefreshUtilities.csproj">
       <Project>{3c105e9a-6ed6-4404-9d19-c31d0c5da563}</Project>
       <Name>RefreshUtilities</Name>
     </ProjectReference>

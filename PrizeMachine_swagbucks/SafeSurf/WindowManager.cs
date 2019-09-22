@@ -1,9 +1,5 @@
 using System;
-using System.Collections.Generic;
-using System.Text;
 using System.Windows.Forms;
-using System.Drawing;
-using System.Diagnostics;
 
 namespace SCTV
 {
@@ -20,11 +16,11 @@ namespace SCTV
 
         public bool ShowAddressBar
         {
-            set 
-            { 
+            set
+            {
                 showAddressBar = value;
 
-                if(ActiveBrowserControl != null)
+                if (ActiveBrowserControl != null)
                     ActiveBrowserControl.ShowAddressBar = value;
             }
 

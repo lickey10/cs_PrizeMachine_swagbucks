@@ -1,16 +1,16 @@
+using Microsoft.Win32;
+using RefreshUtilities;
+using SCTVObjects;
 using System;
+using System.Collections;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
+using System.Configuration;
+using System.Diagnostics;
 using System.Drawing;
+using System.IO;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Forms;
-using System.IO;
-using System.Collections;
-using Microsoft.Win32;
-using SCTVObjects;
-using System.Runtime.InteropServices;
-using System.Diagnostics;
 
 namespace SCTV
 {
@@ -27,6 +27,8 @@ namespace SCTV
         public static string blockedSitesPath = "config\\BlockedSites.txt";
         public static string foundBlockedSitesPath = "config\\foundBlockedSites.txt";
         public static string loginInfoPath = "config\\LoginInfo.txt";
+        public static string statusLogPath = ConfigurationManager.AppSettings["StatusLogPath"];
+
         public bool adminLock = false;//locks down browser until unlocked by a parent
         public int loggedInTime = 0;
         public bool checkForms = true;
@@ -61,7 +63,7 @@ namespace SCTV
         int keepRunningTimerTicks = 0;
         string goToUrlString = "";
         RefreshUtilities.RefreshUtilities refreshUtilities;
-        RefreshUtilities.FirstRun firstRun = new RefreshUtilities.FirstRun();
+        FirstRun firstRun = new FirstRun();
         int numberOfPrizesEntered = 0;
         int refreshRate = 50;//the default refresh rate for the videos
         bool foundNextVideo = false;
@@ -69,6 +71,11 @@ namespace SCTV
         int watchingVideosCount = 0;
         string startURL = "http://www.swagbucks.com/watch/";
         string refererURL = "http://www.swagbucks.com/refer/lickey";
+        List<string> users = new List<string>();
+        string userLoggingOut = "";
+        bool logBackIn = false;
+        bool loggingIn = false;
+        string currentUser = "";
 
         public Uri URL
         {
@@ -228,8 +235,13 @@ namespace SCTV
                     startInstructions.Show(this);
                 }
 
+                if (!statusLogPath.Contains("."))
+                    statusLogPath += "Status_" + DateTime.Now.ToShortDateString().Replace("/", "") + "_" + DateTime.Now.ToShortTimeString().Replace(":", "") + ".txt";
+
+                statusLogPath = statusLogPath.Replace(" ", "");
+
                 useLatestIE();
-                
+
                 tabControlEx.Name = "tabControlEx";
                 tabControlEx.SelectedIndex = 0;
                 tabControlEx.Visible = false;
@@ -269,7 +281,7 @@ namespace SCTV
 
 
                 //getDefaultBrowser();
-                
+
             }
             catch (Exception ex)
             {
@@ -320,7 +332,7 @@ namespace SCTV
                 //Tools.WriteToFile(ex);
                 //Application.Restart();
                 throw;
-            }            
+            }
         }
 
         private void RefreshUtilities_Error(object sender, EventArgs e)
@@ -334,18 +346,18 @@ namespace SCTV
 
             //RestartApp();
 
-            if (sender != null && sender is RefreshUtilities.TimerInfo && ((RefreshUtilities.TimerInfo)sender).MethodToCall.Trim().Length > 0)
+            if (sender != null && sender is TimerInfo && ((TimerInfo)sender).MethodToCall.Trim().Length > 0)
             {
-                if (((RefreshUtilities.TimerInfo)sender).MethodToCall == "clickWatchVideos")
+                if (((TimerInfo)sender).MethodToCall == "clickWatchVideos")
                 {
                     if (!getNextVideo(swagBucksBrowser.Document))
                         findNextCategory(documentString, false);
 
-                    if(!foundCategory)
-                         btnWatchVideos_Click(sender, null);
+                    if (!foundCategory)
+                        btnWatchVideos_Click(sender, null);
                 }
             }
-                
+
         }
 
         private void Window_Error(object sender, HtmlElementErrorEventArgs e)
@@ -355,14 +367,14 @@ namespace SCTV
 
         private void RefreshUtilities_GoToUrlComplete(object sender, EventArgs e)
         {
-            if (sender != null && sender is RefreshUtilities.TimerInfo && ((RefreshUtilities.TimerInfo)sender).Browser is ExtendedWebBrowser)
+            if (sender != null && sender is TimerInfo && ((TimerInfo)sender).Browser is ExtendedWebBrowser)
             {
-                ExtendedWebBrowser tempBrowser = (ExtendedWebBrowser)((RefreshUtilities.TimerInfo)sender).Browser;
+                ExtendedWebBrowser tempBrowser = (ExtendedWebBrowser)((TimerInfo)sender).Browser;
 
                 if (tempBrowser.IsBusy)
                     tempBrowser.Stop();
 
-                tempBrowser.Url = new Uri(((RefreshUtilities.TimerInfo)sender).UrlToGoTo);
+                tempBrowser.Url = new Uri(((TimerInfo)sender).UrlToGoTo);
             }
         }
 
@@ -375,9 +387,9 @@ namespace SCTV
 
             watchingVideo = false;
 
-            
+
         }
-        
+
         private void ActiveBrowser_Navigating(object sender, WebBrowserNavigatingEventArgs e)
         {
             documentString = "";
@@ -491,6 +503,81 @@ namespace SCTV
             }
         }
 
+        private void logIn(string username, string password)
+        {
+            userLoggingOut = "";
+            logBackIn = false;
+            bool foundEmail = false;
+            bool foundPassword = false;
+            HtmlElement txtPassword = null;
+
+            log(statusLogPath, "Logging In " + username);
+
+            HtmlElementCollection elc = swagBucksBrowser.Document.GetElementsByTagName("input");
+
+            //find user
+            foreach (HtmlElement el in elc)
+            {
+                //<input placeholder="Email" type="email" class="form-control form-group-sm" name="email" tabindex="1">
+                if (el.OuterHtml.ToLower().Contains("type=\"email\""))//this is the email field
+                {
+                    //el.Focus();
+                    //el.InnerText = username;
+                    el.SetAttribute("value", username);
+
+                    foundEmail = true;
+                }
+
+                //<input placeholder="Password" type="password" class="form-control form-group-sm" name="password" tabindex="2">
+                if (el.OuterHtml.ToLower().Contains("tabindex=\"2\""))//this is the password field
+                {
+                    //el.SetAttribute("text", password);
+                    el.SetAttribute("value", password);
+                    txtPassword = el;
+                    foundPassword = true;
+
+                    break;
+                }
+            }
+
+            if (foundEmail && foundPassword)
+            {
+                elc = swagBucksBrowser.Document.Forms;
+
+                //elc = bitVideoBrowser.Document.GetElementsByTagName("form");
+
+                foreach (HtmlElement el in elc)
+                {
+                    //<form id="simpleLogin-form" action="/Home/Login" method="POST" class="hidden-xs">
+                    if (el.OuterHtml.Contains("id=\"simpleLogin-form\"") && el.OuterHtml.Contains("class=\"hidden-xs\""))
+                    {
+                        //submit the form
+                        //el.InvokeMember("submit");
+                        //loggingIn = true;
+                        //break;
+
+                        HtmlElementCollection elc2 = el.GetElementsByTagName("input");
+
+                        foreach (HtmlElement el2 in elc2)
+                        {
+                            //find login
+
+                            //<input type="submit" class="WLButton ucase btn btn-success form-control loginbtn" value="Login" tabindex="3">
+                            if (el2.OuterHtml.ToLower().Contains("type=\"submit\"") && el2.OuterHtml.ToLower().Contains("value=\"login\""))//this is the login button
+                            {
+                                loggingIn = true;
+                                refreshUtilities.ClickElement(el2, 3, true, lblRefreshTimer);
+
+                                currentUser = username + "|" + password;
+
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         private bool isCurrentVideoWatched(HtmlDocument pageDocument)
         {
             string currentVideoIDString = pageDocument.Url.ToString();
@@ -502,7 +589,7 @@ namespace SCTV
 
             foreach (string video in videos)
             {
-                if(video.Contains("iconCheckmark") && video.Contains(currentVideoIDString))
+                if (video.Contains("iconCheckmark") && video.Contains(currentVideoIDString))
                 {
                     lblWatched.Text = "Watched";
                     watchingVideo = false;
@@ -548,7 +635,7 @@ namespace SCTV
                     foundCurrentVideo = true;
                 }
             }
-            
+
             return false;
         }
 
@@ -559,9 +646,9 @@ namespace SCTV
 
             if (File.Exists("config.cel"))
             {
-                foreach(string configLine in File.ReadAllLines("config.cel"))
+                foreach (string configLine in File.ReadAllLines("config.cel"))
                 {
-                    if(configLine.Contains("RefreshRate="))
+                    if (configLine.Contains("RefreshRate="))
                     {
                         tempString = configLine.Replace("RefreshRate=", "");
 
@@ -576,7 +663,7 @@ namespace SCTV
             }
 
             if (tempRefreshRate == -1)
-                tempRefreshRate = refreshRate;     
+                tempRefreshRate = refreshRate;
 
             return tempRefreshRate;
         }
@@ -586,7 +673,7 @@ namespace SCTV
             string[] tempRefreshRate = new string[1];
             tempRefreshRate[0] = "RefreshRate=" + refreshRate;
 
-            File.WriteAllLines("config.cel",tempRefreshRate);
+            File.WriteAllLines("config.cel", tempRefreshRate);
         }
 
         private void findNextCategory(string pageContent, bool goInstantly)
@@ -638,7 +725,7 @@ namespace SCTV
 
                 //Application.Restart();
                 throw;
-            }            
+            }
         }
 
         private void iterateVideoCards(string pageContent)
@@ -718,7 +805,7 @@ namespace SCTV
 
                 //Application.Restart();
                 throw;
-            }            
+            }
         }
 
         private void cleanVideoList()
@@ -748,7 +835,7 @@ namespace SCTV
 
                 //Application.Restart();
                 throw;
-            }            
+            }
         }
 
         protected void RestartApp()
@@ -815,7 +902,7 @@ namespace SCTV
                 //'if not, Set Emulation to highest level possible on the user machine
                 string Root = "HKEY_CURRENT_USER\\";
                 string Key = "Software\\Microsoft\\Internet Explorer\\Main\\FeatureControl\\FEATURE_BROWSER_EMULATION";
-                
+
                 object CurrentSetting = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(Key).GetValue(AppName + ".exe");
 
                 if (CurrentSetting == null || int.Parse(CurrentSetting.ToString()) != VersionCode)
@@ -826,7 +913,7 @@ namespace SCTV
             }
             catch (Exception ex)
             {
-                Tools.WriteToFile(Tools.errorFile, "useLatestIE error: "+ ex.Message + Environment.NewLine + ex.StackTrace);
+                Tools.WriteToFile(Tools.errorFile, "useLatestIE error: " + ex.Message + Environment.NewLine + ex.StackTrace);
             }
         }
 
@@ -1310,6 +1397,9 @@ namespace SCTV
 
         public void log(string path, string content)
         {
+            //make sure the path exists
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+
             logHeader(path);
 
             File.AppendAllText(path, content);
@@ -1317,6 +1407,9 @@ namespace SCTV
 
         public void log(string path, string[] content)
         {
+            //make sure the path exists
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+
             logHeader(path);
 
             File.WriteAllLines(path, content);
@@ -1350,7 +1443,7 @@ namespace SCTV
             RegistryKey key = null;
             try
             {
-                key = Registry.ClassesRoot.OpenSubKey(@"HTTP\shell\open\command",true);
+                key = Registry.ClassesRoot.OpenSubKey(@"HTTP\shell\open\command", true);
 
                 //trim off quotes
                 //browser = key.GetValue(null).ToString().Replace("\"", "");
@@ -1361,10 +1454,10 @@ namespace SCTV
                 //}
 
                 browser = key.GetValue(null).ToString();
-                
+
                 //key.SetValue(null, (string)@browser);
 
-                string safeSurfBrowser = "\""+ Application.ExecutablePath +"\"";
+                string safeSurfBrowser = "\"" + Application.ExecutablePath + "\"";
 
                 key.SetValue(null, (string)@safeSurfBrowser);
             }
@@ -1413,7 +1506,7 @@ namespace SCTV
             else
                 MessageBox.Show("You must browse to a website to add it to your favorites");
         }
-        
+
         private string findValue(string stringToParse, string startPattern, string endPattern)
         {
             return findValue(stringToParse, startPattern, endPattern, false);
@@ -1472,7 +1565,7 @@ namespace SCTV
             else
                 refreshUtilities.GoToURL("javascript: window.external.CallServerSideCode();", 1, lblRefreshTimer, swagBucksBrowser);
         }
-        
+
         private void btnFindCategory_Click(object sender, EventArgs e)
         {
             findNextCategory(swagBucksBrowser.DocumentText, true);
